@@ -4,7 +4,7 @@ using Dalamud.Plugin;
 using System.IO;
 using System.Reflection;
 using Dalamud.Interface.Windowing;
-using NKPlugin.Windows;
+using OPP.Windows;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using System.Runtime.InteropServices;
 using System;
@@ -27,12 +27,12 @@ using FFXIVClientStructs.STD;
 using System.Collections.Generic;
 using System.Numerics;
 
-namespace NKPlugin
+namespace OPP
 {
     public sealed class Plugin : IDalamudPlugin
     {
-        public string Name => "Ninja KT Plugin";
-        private const string CommandName = "/nkp";
+        public string Name => "0xPvpPlugin";
+        private const string CommandName = "/0x";
 
         private DalamudPluginInterface PluginInterface { get; init; }
         private CommandManager CommandManager { get; init; }
@@ -40,7 +40,7 @@ namespace NKPlugin
         public Configuration Configuration { get; init; }
         [PluginService] public ClientState clientState { get; init; } = null!;
         [PluginService] public static ChatGui chatGui { get; private set; } = null!;
-        public WindowSystem WindowSystem = new("NKPlugin");
+        public WindowSystem WindowSystem = new("0xPvpPlugin");
         [PluginService]
         internal ObjectTable objectTable { get; init; } = null!;
         [PluginService]
@@ -81,7 +81,7 @@ namespace NKPlugin
         {
             this.PluginInterface = pluginInterface;
             this.CommandManager = commandManager;
-            chatGui.Print("0xsPvpPlugin Initialize.");
+            chatGui.Print("0xPvpPlugin Initialize.");
             this.Configuration = this.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
             this.Configuration.Initialize(this.PluginInterface);
             this.CommandManager.AddHandler("/0x", new CommandInfo(OnCommand)
