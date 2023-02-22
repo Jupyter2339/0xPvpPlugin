@@ -47,15 +47,16 @@ namespace OPP
 
         private void OnCommand(string command, string args)
         {
-            if (command == CommandName && args == "autoON")
+            if (command == CommandName && args == "on")
             {
-                //Service.chatGui.Print("———AUTO ON———");
                 Service.Configuration.AutoSelect = true;
             }
-            if (command == CommandName && args == "autoOFF")
+            if (command == CommandName && args == "off")
             {
-                //Service.chatGui.Print("———AUTO OFF———");
                 Service.Configuration.AutoSelect = false;
+            }
+            if (command == CommandName && args == "setting") {
+                Service.ConfigWindow.visible = true;
             }
         }
         private void OnFrameworkUpdate(Framework framework)
@@ -84,7 +85,7 @@ namespace OPP
 
         public void DrawConfigUI()
         {
-            Service.ConfigWindow.Visible = true;
+            Service.ConfigWindow.visible = true;
         }
     }
 }

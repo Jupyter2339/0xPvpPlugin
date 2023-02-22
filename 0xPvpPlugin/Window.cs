@@ -16,11 +16,7 @@ using OPP.Services;
 namespace OPP.Window
 {
     public sealed class ConfigWindow : Dalamud.Interface.Windowing.Window, IDisposable {
-        private bool visible = false;
-        public bool Visible {
-            get => visible;
-            set => visible = value;
-        }
+        internal bool visible = false;
 
         public ConfigWindow() : base("OOP Config", ImGuiWindowFlags.AlwaysAutoResize) {
             RespectCloseHotkey = true;
@@ -34,11 +30,11 @@ namespace OPP.Window
         }
 
         public void DrawConfig() {
-            if (!Visible) {
+            if (!visible) {
                 return;
             }
 
-            if (ImGui.Begin("OOP Config", ref visible)) {
+            if (ImGui.Begin("OOP 设置", ref visible)) {
 
                 bool AutoSelect = Service.Configuration.AutoSelect;
                 if (ImGui.Checkbox("自动选择", ref AutoSelect)) {
