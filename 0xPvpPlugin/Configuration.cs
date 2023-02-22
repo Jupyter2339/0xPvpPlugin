@@ -1,43 +1,32 @@
 using Dalamud.Configuration;
-using Dalamud.Plugin;
 using System;
-using System.Numerics;
 using System.Collections.Generic;
-using Dalamud.Game.ClientState.Conditions;
-using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.SubKinds;
-using Dalamud.Game.ClientState;
+using OPP.Services;
 
-namespace OPP.Windows;
-[Serializable]
-public class Configuration : IPluginConfiguration
-{
-    public int Version { get; set; } = 0;
-
-    public bool ConfigWindowVisible = false;
-    public Vector2 ConfigWindowPos = new(20, 20);
-    public Vector2 ConfigWindowSize = new(300, 300);
-    public float ConfigWindowBgAlpha = 1;
-
-    public float SelectDistance { get; set; } = 20;
-    public float SelectInterval = 50;
-    public bool Includ_NPC = false;
-    public bool AutoSelect { get; set; } = false;
-    public bool K { get; set; } = false;
-
-    [NonSerialized]
-    public DalamudPluginInterface? pluginInterface;
-    public ObjectTable nearObjects;
-    public List<PlayerCharacter> EnermyActors = new List<PlayerCharacter>();
-    public PlayerCharacter LocalPlayer;
-
-    public void Initialize(DalamudPluginInterface pluginInterface)
+namespace OPP.Config {
+    [Serializable]
+    public class Configuration : IPluginConfiguration
     {
-        this.pluginInterface = pluginInterface;
-    }
+        public int Version { get; set; } = 0;
+        public float SelectDistance { get; set; } = 20;
+        public bool AutoSelect { get; set; } = false;
+        public bool KT { get; set; } = false;
+        public bool noPaladin { get; set; } = true;
+        public bool noDarknight { get; set; } = true;
+        public bool noPretected { get; set; } = true;
+        public bool noSamuraiWithDT { get; set; } = false;
+        public bool KeepSD { get; set; } = true;
+        public bool noMS { get; set; } = true;
 
-    public void Save()
-    {
-        this.pluginInterface!.SavePluginConfig(this);
+        [NonSerialized]
+        public List<PlayerCharacter> EnermyActors = new List<PlayerCharacter>();
+        public PlayerCharacter LocalPlayer;
+
+        public void Save()
+        {
+            Service.PluginInterface.SavePluginConfig(this);
+        }
     }
 }
+
