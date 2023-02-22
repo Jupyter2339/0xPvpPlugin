@@ -1,9 +1,9 @@
 {
   "Author": "0x",
-  "Name": "0xPvpPlugin",
-  "Punchline": "0x战场助手",
-  "Description": "",
-  "InternalName": "OPP",
+  "Name": "0x's PvP Plugin",
+  "InternalName": "0xPvpPlugin",
+  "Punchline": "战场助手",
+  "Description": "/0x setting 打开设置页面",
   "RepoUrl": "https://github.com/0xNe0n/0xPvpPlugin",
   "ApplicableVersion": "any",
   "Tags": [ "0x", "PvP" ],
