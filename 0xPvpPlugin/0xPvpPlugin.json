@@ -1,12 +1,9 @@
 {
   "Author": "0x",
   "Name": "0xPvpPlugin",
-  "Punchline": "0x战场助手",
+  "Punchline": "獭獭战场助手",
   "Description": "",
-  "InternalName": "OPP",
-  "RepoUrl": "https://github.com/0xNe0n/0xPvpPlugin",
   "ApplicableVersion": "any",
-  "Tags": [ "0x", "PvP" ],
-  "DalamudApiLevel": 7,
+  "DalamudApiLevel": 9,
   "AcceptsFeedback": false
 }

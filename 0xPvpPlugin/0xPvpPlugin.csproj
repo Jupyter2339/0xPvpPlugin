@@ -6,11 +6,11 @@
     <Version>1.0.0.0</Version>
     <Description>A Dalamud PvP Helper For FFXIV.</Description>
     <Copyright></Copyright>
-    <PackageProjectUrl>https://github.com/0xNe0n/0xPvpPlugin</PackageProjectUrl>
+    <PackageProjectUrl></PackageProjectUrl>
   </PropertyGroup>
 
   <PropertyGroup>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
     <Platforms>x64</Platforms>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>

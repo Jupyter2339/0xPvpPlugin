@@ -26,6 +26,12 @@ using Lumina.Excel.GeneratedSheets;
 using FFXIVClientStructs.STD;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Linq;
+using System.Collections;
+using Dalamud.Plugin.Services;
+using Dalamud.Utility.Signatures;
+using FFXIVClientStructs.Interop;
+using Lumina.Excel.GeneratedSheets2;
 
 namespace OPP
 {
@@ -35,27 +41,27 @@ namespace OPP
         private const string CommandName = "/0x";
 
         private DalamudPluginInterface PluginInterface { get; init; }
-        private CommandManager CommandManager { get; init; }
-        [PluginService] public TargetManager TargetManaget { get; init; } = null!;
+        private ICommandManager CommandManager { get; init; }
+        [PluginService] public static ITargetManager TargetManaget { get; private set; } = null!;
         public Configuration Configuration { get; init; }
-        [PluginService] public ClientState clientState { get; init; } = null!;
-        [PluginService] public static ChatGui chatGui { get; private set; } = null!;
+        [PluginService] public static IClientState clientState { get; private set; } = null!;
+        [PluginService] public static IGameInteropProvider gameInteropProvider { get; private set; }
+        [PluginService] public static IChatGui chatGui { get; private set; } = null!;
         public WindowSystem WindowSystem = new("0xPvpPlugin");
-        [PluginService]
-        internal ObjectTable objectTable { get; init; } = null!;
-        [PluginService]
-        internal Framework Framework { get; init; } = null!;
-        [PluginService]
-        internal static SigScanner Scanner{get; private set;}
+        [PluginService] public static IObjectTable objectTable { get; private set; }
+        [PluginService] internal static IFramework Framework { get; private set; } = null!;
+        [PluginService] internal static ISigScanner Scanner { get; set; }
         //internal PluginAddressResolver Address{get; set; } = null!;
-        [PluginService]
-        internal static DataManager DataManager { get; private set; } = null!;
+        [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
         internal static ActionManager ActionManager { get; private set; }
+        [PluginService]
+        internal static IPluginLog pluginLog { get; private set; }
 
         DateTime LastSelectTime;
 
         uint xdtz = (uint)29515; //星遁天诛
-        //uint xdtz = (uint)29067; //圣盾阵
+
+        private bool drawConfigWindow;
         Action _action => DataManager.GetExcelSheet<Action>().GetRow(xdtz);
         uint ID => _action.RowId;
         //uint ID = 11;
@@ -66,7 +72,10 @@ namespace OPP
 
         private IntPtr actionManager = IntPtr.Zero;
         private delegate uint GetIconDelegate(IntPtr actionManager, uint actionID);
-        private readonly Hook<GetIconDelegate> getIconHook;
+        //private readonly Hook<GetIconDelegate> getIconHook;
+
+        [Signature("E8 ?? ?? ?? ?? 8B F8 3B DF", DetourName = nameof(GetIconDelegate))]
+        private Hook<GetIconDelegate> getIconHook { get; init; }
 
         #region 更新地址
         private IntPtr GetAdjustedActionId;
@@ -77,28 +86,32 @@ namespace OPP
 
         public Plugin(
             [RequiredVersion("1.0")] DalamudPluginInterface pluginInterface,
-            [RequiredVersion("1.0")] CommandManager commandManager)
+            [RequiredVersion("1.0")] ICommandManager commandManager)
         {
             this.PluginInterface = pluginInterface;
             this.CommandManager = commandManager;
-            chatGui.Print("0xPvpPlugin Initialize.");
+            //chatGui.Print("0xPvpPlugin Initialize.");
             this.Configuration = this.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
             this.Configuration.Initialize(this.PluginInterface);
             this.CommandManager.AddHandler("/0x", new CommandInfo(OnCommand)
             {
-                HelpMessage = "_ → x0\\"
+                HelpMessage = "/0x settings"
             }) ;
 
             //CanAttack = Marshal.GetDelegateForFunctionPointer<CanAttackDelegate>(Process.GetCurrentProcess().MainModule.BaseAddress + CanAttackOffset);
             CanAttack = Marshal.GetDelegateForFunctionPointer<CanAttackDelegate>(Scanner.ScanText("48 89 5C 24 ?? 57 48 83 EC 20 48 8B DA 8B F9 E8 ?? ?? ?? ?? 4C 8B C3"));
 
             GetAdjustedActionId = Scanner.ScanText("E8 ?? ?? ?? ?? 8B F8 3B DF");
-            getIconHook = Hook<GetIconDelegate>.FromAddress(GetAdjustedActionId, GetIconDetour);
+
+            if(gameInteropProvider is null) pluginLog.Debug(Convert.ToString("1234"));
+            pluginLog.Debug(Convert.ToString(gameInteropProvider));
+
+            getIconHook = gameInteropProvider.HookFromAddress<GetIconDelegate>(GetAdjustedActionId, GetIconDetour);
             getIconHook.Enable();
 
-            this.Framework.Update += this.OnFrameworkUpdate;
+            Framework.Update += this.OnFrameworkUpdate;
             this.PluginInterface.UiBuilder.Draw += DrawUI;
-            this.PluginInterface.UiBuilder.OpenConfigUi += DrawConfigUI;
+            this.PluginInterface.UiBuilder.OpenConfigUi += OnOpenConfig;
         }
 
 
@@ -106,41 +119,67 @@ namespace OPP
         internal uint OriginalHook(uint actionID) => getIconHook.Original(actionManager, actionID);
         private unsafe uint GetIconDetour(IntPtr actionManager, uint actionID) {
             try {
-                if (Configuration.AutoSelect)
+                if (clientState.IsPvP && clientState.LocalPlayer != null)
                 {
-                    if (actionID == 29513)  //缩地不受三印影响
+                    //忍者
+                    if (clientState.LocalPlayer.ClassJob.Id == 30)
                     {
-                        return actionID;
-                    }
-                    if (clientState.LocalPlayer != null && actionID == 29507 && HasEffect(sybuff, clientState.LocalPlayer))  //防止重复点三印点出命水
-                    {
-                        return 29657;
-                    }
-                    if (clientState.LocalPlayer != null && clientState.LocalPlayer.TargetObject != null)
-                    {
-                        PlayerCharacter actor = clientState.LocalPlayer.TargetObject as PlayerCharacter;
-                        if (clientState.LocalPlayer.CurrentHp != 0 && actor.CurrentHp != 0 && actor.CurrentHp >= ((actor.MaxHp / 2) - 2) && actionID == 29515)
+
+                        if (actionID == 29513)  //缩地不受三印影响
+                        {
+                            return actionID;
+                        }
+
+                        if (clientState.LocalPlayer != null && actionID == 29507 && HasEffect(sybuff, clientState.LocalPlayer))  //防止重复点三印点出命水
                         {
                             return 29657;
                         }
-                        //else if (HasEffect(dtbuff, actor))
-                        //{
-                        //    if (actionID == 29515 || actionID == 29506 || actionID == 29054 || actionID == 29054 || actionID == 29055 || actionID == 29056 || actionID == 29057 || actionID == 29711)
-                        //    {
-                        //        return OriginalHook(actionID);
-                        //    }
-                        //    else
-                        //    {
-                        //        return 29657;
-                        //    }
-                        //}
+
+                        if (clientState.LocalPlayer.TargetObject != null)
+                        {
+                            PlayerCharacter actor = clientState.LocalPlayer.TargetObject as PlayerCharacter;
+                            if (clientState.LocalPlayer.CurrentHp != 0 && actor.CurrentHp != 0 && actor.CurrentHp >= ((actor.MaxHp / 2) - 2) && actionID == 29515) //星遁天诛
+                            {
+                                return 29657;
+                            }
+                            //else if (HasEffect(dtbuff, actor))
+                            //{
+                            //    if (actionID == 29515 || actionID == 29506 || actionID == 29054 || actionID == 29054 || actionID == 29055 || actionID == 29056 || actionID == 29057 || actionID == 29711)
+                            //    {
+                            //        return OriginalHook(actionID);
+                            //    }
+                            //    else
+                            //    {
+                            //        return 29657;
+                            //    }
+                            //}
+                            else
+                            {
+                                return OriginalHook(actionID);
+                            }
+                        }
+                        else if (clientState.LocalPlayer.CurrentHp != 0 && actionID == 29515)
+                        {
+                            return 29657;
+                        }
                         else
                         {
                             return OriginalHook(actionID);
                         }
                     }
-                    else
+                    //武士
+                    else if (clientState.LocalPlayer.ClassJob.Id == 34)
                     {
+                        if (Configuration.SLBX && actionID == 29524)  //冰雪
+                        {
+                            return 29523;
+                        }
+                        else {
+                            return OriginalHook(actionID);
+                        }
+                    }
+                    //其他职业
+                    else {
                         return OriginalHook(actionID);
                     }
                 }
@@ -151,97 +190,90 @@ namespace OPP
             }
             catch(Exception e)
             {
-                return OriginalHook(actionID);
+                if (actionID == 29515)
+                {
+                    return 29657;
+                }
+                else { 
+                    return OriginalHook(actionID);
+                }
             }
         }
 
 
 
         public bool HasEffect(ushort effectID, GameObject? obj) => GetStatus(effectID, obj, null) is not null;
+
         internal Dalamud.Game.ClientState.Statuses.Status? GetStatus(uint statusID, GameObject? obj, uint? sourceID)
         {
-            Dictionary<(uint StatusID, uint? TargetID, uint? SourceID), Dalamud.Game.ClientState.Statuses.Status?> statusCache = new();
+            if (obj is null || obj is not BattleChara chara) return null;
+
+            //Dictionary<(uint StatusID, uint? TargetID, uint? SourceID), Dalamud.Game.ClientState.Statuses.Status?> statusCache = new();
             uint InvalidObjectID = 0xE000_0000;
-            var key = (statusID, obj?.ObjectId, sourceID);
-            if (statusCache.TryGetValue(key, out Dalamud.Game.ClientState.Statuses.Status? found))
-                return found;
+            //var key = (statusID, obj?.ObjectId, sourceID);
 
-            if (obj is null)
-                return statusCache[key] = null;
+            BattleChara charaTemp = (BattleChara) obj;
 
-            if (obj is not BattleChara chara)
-                return statusCache[key] = null;
-            foreach (Dalamud.Game.ClientState.Statuses.Status? status in chara.StatusList)
+            foreach (Dalamud.Game.ClientState.Statuses.Status? status in charaTemp.StatusList)
             {
                 if (status.StatusId == statusID && (!sourceID.HasValue || status.SourceId == 0 || status.SourceId == InvalidObjectID || status.SourceId == sourceID))
-                    return statusCache[key] = status;
+                {
+                    return status;
+                }
             }
-            return statusCache[key] = null;
+            return null;
         }
 
-        //3190: ["星遁天诛", 0],
-        //3192: ["星遁天诛预备", 14945],
-        //3194: ["无法发动冰晶乱流之术", 14947],
-        //public bool IsOnCooldown(uint actionID) => GetCooldown(actionID).IsCooldown;
-        //internal unsafe CooldownData GetCooldown(uint actionID)
-        //{
-        //    if (cooldownCache.TryGetValue(actionID, out CooldownData found))
-        //        return found;
-
-        //    ActionManager* actionManager = ActionManager.Instance();
-        //    if (actionManager == null)
-        //        return cooldownCache[actionID] = default;
-
-        //    byte cooldownGroup = GetCooldownGroup(actionID);
-
-        //    RecastDetail* cooldownPtr = actionManager->GetRecastGroupDetail(cooldownGroup - 1);
-        //    if (cooldownPtr is null)
-        //    {
-        //        CooldownData data = new();
-        //        data.CooldownTotal = -1;
-
-        //        return cooldownCache[actionID] = data;
-        //    }
-
-        //    cooldownPtr->ActionID = actionID;
-
-        //    return cooldownCache[actionID] = *(CooldownData*)cooldownPtr;
-        //}
-
-
-
+        internal Dalamud.Game.ClientState.Statuses.Status? GetStatusFromMe(uint statusID, GameObject? obj)
+        {
+            if (obj is null || obj is not BattleChara chara) return null;
+            BattleChara charaTemp = (BattleChara)obj;
+            //chatGui.Print(charaTemp.StatusList.Count().ToString());
+            foreach (Dalamud.Game.ClientState.Statuses.Status status in charaTemp.StatusList)
+            {
+                //chatGui.Print(status.StatusId.ToString());
+                //chatGui.Print(status.SourceId.ToString());
+                //chatGui.Print(clientState.LocalPlayer.ObjectId.ToString());
+                //chatGui.Print(status.SourceObject?.OwnerId.ToString());
+                if (status.StatusId == statusID && (status.SourceId == clientState.LocalPlayer.ObjectId || status.SourceObject?.OwnerId == clientState.LocalPlayer.ObjectId))
+                {
+                    return status;
+                }
+            }
+            return null;
+        }
 
         public void Dispose()
         {
             getIconHook?.Dispose();
             this.CommandManager.RemoveHandler("/0x");
-            this.Framework.Update -= this.OnFrameworkUpdate;
+            Framework.Update -= this.OnFrameworkUpdate;
             this.WindowSystem.RemoveAllWindows();
             this.CommandManager.RemoveHandler(CommandName);
         }
 
         private void OnCommand(string command, string args)
         {
+            if (command == "/0x" && args == "settings")
+            {
+                drawConfigWindow = !drawConfigWindow;
+            }
             if (command == "/0x" && args == "autoON")
             {
                 chatGui.Print("———AUTO ON———");
                 Configuration.AutoSelect = true;
+
+                //TargetManaget.Target = null;
+
+                //var distance2D = Math.Sqrt(Math.Pow(clientState.LocalPlayer.TargetObject.YalmDistanceX, 2) + Math.Pow(clientState.LocalPlayer.TargetObject.YalmDistanceZ, 2)) - 6;
+                //distance2D = Math.Sqrt(Math.Pow(clientState.LocalPlayer.Position.X - clientState.LocalPlayer.TargetObject.Position.X, 2) + Math.Pow(clientState.LocalPlayer.Position.Y - clientState.LocalPlayer.TargetObject.Position.Y, 2)) - 1;
+                //pluginLog.Error(distance2D.ToString());
             }
             if (command == "/0x" && args == "autoOFF")
             {
                 chatGui.Print("———AUTO OFF———");
                 Configuration.AutoSelect = false;
             }
-            //if (command == "/0x" && args == "KON")
-            //{
-            //    chatGui.Print("———K ON———");
-            //    Configuration.K = true;
-            //}
-            //if (command == "/0x" && args == "KOFF")
-            //{
-            //    chatGui.Print("———K OFF———");
-            //    Configuration.K = false;
-            //}
             if (command == "/0x" && args == "20")
             {
                 chatGui.Print("——Distance: 20——");
@@ -252,12 +284,22 @@ namespace OPP
                 chatGui.Print("——Distance: 25——");
                 Configuration.SelectDistance = 25;
             }
+            if (command == "/0x" && args == "SLBXON")
+            {
+                chatGui.Print("——SLBX: ON——");
+                Configuration.SLBX = true;
+            }
+            if (command == "/0x" && args == "SLBXOFF")
+            {
+                chatGui.Print("——SLBX: OFF——");
+                Configuration.SLBX = false;
+            }
         }
-        private void OnFrameworkUpdate(Framework framework)
+        private void OnFrameworkUpdate(IFramework framework)
         {
             try
             {
-                if (clientState.LocalPlayer != null && clientState.LocalPlayer.CurrentHp != 0 && Configuration.AutoSelect && clientState.IsPvP)
+                if (clientState.LocalPlayer != null && clientState.IsPvP && clientState.LocalPlayer.CurrentHp != 0 && Configuration.AutoSelect)
                 {
                     this.ReFreshEnermyActors_And_AutoSelect();
                 }
@@ -270,7 +312,6 @@ namespace OPP
             {
                 return;
             }
-            Configuration.LocalPlayer = clientState.LocalPlayer;
             lock (Configuration.EnermyActors)
             {
                 Configuration.EnermyActors.Clear();
@@ -282,7 +323,8 @@ namespace OPP
                 {
                     try
                     {
-                        if (obj != null && (obj.ObjectId != Configuration.LocalPlayer.ObjectId) & obj.Address.ToInt64() != 0 && CanAttack(142, obj.Address) == 1)
+                        //if (obj != null && (obj.ObjectId != clientState.LocalPlayer.ObjectId) & obj.Address.ToInt64() != 0 )
+                        if (obj != null && (obj.ObjectId != clientState.LocalPlayer.ObjectId) & obj.Address.ToInt64() != 0 && CanAttack(142, obj.Address) == 1)
                         {
                             PlayerCharacter rcTemp = obj as PlayerCharacter;
                             //19 骑士   32 DK
@@ -311,63 +353,61 @@ namespace OPP
 
         private void SelectEnermyOnce()
         {
-            if (Configuration.LocalPlayer == null || Configuration.EnermyActors == null)
+            if (clientState.LocalPlayer == null || Configuration.EnermyActors == null)
             {
                 return;
             }
             PlayerCharacter selectActor = null;
-            foreach (PlayerCharacter actor in Configuration.EnermyActors)
+            if (clientState.LocalPlayer.ClassJob.Id == 30)
             {
-                try
+                if (clientState.LocalPlayer.TargetObject != null && clientState.LocalPlayer.TargetObject is PlayerCharacter)
                 {
-                    //var distance2D = Math.Sqrt(Math.Pow(clientState.LocalPlayer.Position.X - actor.Position.X, 2) + Math.Pow(clientState.LocalPlayer.Position.Y - actor.Position.Y, 2)) - 1;
-                    var distance2D = Math.Sqrt(Math.Pow(actor.YalmDistanceX, 2) + Math.Pow(actor.YalmDistanceZ, 2)) - 6;
-
-                    //if (distance2D <= Configuration.SelectDistance && actor.CurrentHp != 0 && (selectActor == null || actor.CurrentHp < selectActor.CurrentHp))
-                    if (distance2D <= Configuration.SelectDistance && actor.CurrentHp != 0 && actor.CurrentHp <= ((actor.MaxHp / 2)) && !HasEffect(bhbuff, actor))
+                    PlayerCharacter temp = clientState.LocalPlayer.TargetObject as PlayerCharacter;
+                    if (temp.CurrentHp != 0 && temp.ClassJob.Id != 19 && temp.ClassJob.Id != 32)
                     {
-                         selectActor = actor;
-                        break;
+                        Configuration.EnermyActors.Insert(0, temp);
                     }
                 }
-                catch (Exception)
+
+                foreach (PlayerCharacter actor in Configuration.EnermyActors)
                 {
-                    continue;
+                    try
+                    {
+                        //pluginLog.Error(Convert.ToString(actor.Name));
+
+                        //var distance2D = Math.Sqrt(Math.Pow(clientState.LocalPlayer.Position.X - actor.Position.X, 2) + Math.Pow(clientState.LocalPlayer.Position.Y - actor.Position.Y, 2)) - 1;
+                        var distance2D = Math.Sqrt(Math.Pow(actor.YalmDistanceX, 2) + Math.Pow(actor.YalmDistanceZ, 2)) - 6;
+                        //var distance2D = 30;
+
+                        //if (distance2D <= Configuration.SelectDistance && actor.CurrentHp != 0 && (selectActor == null || actor.CurrentHp < selectActor.CurrentHp))
+                        if (distance2D <= Configuration.SelectDistance && actor.CurrentHp != 0 && actor.CurrentHp <= ((actor.MaxHp / 2)) && !HasEffect(bhbuff, actor))
+                        {
+                            selectActor = actor;
+                            break;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
                 }
             }
             if (selectActor != null)
             {
-                TargetManaget.SetTarget(selectActor);
-
-                //bool KFlag = false;
-                //if (selectActor.CurrentHp < ((selectActor.MaxHp / 2) - 2000))
-                //{
-                //    KFlag = true;
-                //}
-                //if (KFlag && Configuration.K)
-                //{
-                //    try
-                //    {
-                //        K();
-                //    }
-                //    catch (Exception) { }
-                //}
+                TargetManaget.Target = selectActor;
             }
         }
-
-        unsafe private void K()
-        {
-            ActionManager.Instance()->UseAction(ActionType.Spell, ID, clientState.LocalPlayer.TargetObjectId);
-        }
-
             private void DrawUI()
         {
-            this.WindowSystem.Draw();
+            //this.WindowSystem.Draw();
+            drawConfigWindow = drawConfigWindow && Configuration.DrawConfigUI();
         }
 
-        public void DrawConfigUI()
+        public void OnOpenConfig()
         {
+            drawConfigWindow = true;
             //WindowSystem.GetWindow("NKP设置").IsOpen = true;
+            //gui.IsOpen = true;
         }
     }
 }
